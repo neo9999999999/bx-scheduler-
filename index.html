@@ -14,8 +14,8 @@
 html,body,#root{height:100%;overflow:hidden}
 body{font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;background:#F5F6F8}
 button{cursor:pointer;border:none;outline:none;font-family:inherit}
-input{background:#fff;border:1px solid #E5E7EB;color:#1A1D23;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;font-family:inherit}
-input:focus{border-color:#2563EB}
+input,textarea{background:#fff;border:1px solid #E5E7EB;color:#1A1D23;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;font-family:inherit}
+input:focus,textarea:focus{border-color:#2563EB}
 ::-webkit-scrollbar{height:6px;width:6px}
 ::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:3px}
 </style>
@@ -25,7 +25,6 @@ input:focus{border-color:#2563EB}
 <script type="text/babel">
 const {useState} = React;
 
-// ── Supabase Cloud Storage Layer ──
 var _sbClient = null;
 var SB_DEFAULT_URL = "https://ayprudyppqmdodmufapc.supabase.co";
 var SB_DEFAULT_KEY = "sb_publishable_PeTv04Qtc0NECThCAKcz9g_AzrBIP0G";
@@ -42,7 +41,6 @@ function getSB() {
   } catch(e) {}
   return null;
 }
-
 function cloudLoad() {
   var sb = getSB();
   if (!sb) return Promise.resolve(null);
@@ -51,7 +49,6 @@ function cloudLoad() {
     return null;
   }).catch(function() { return null; });
 }
-
 function cloudSave(data) {
   var sb = getSB();
   if (!sb) return Promise.resolve();
@@ -126,36 +123,40 @@ function App() {
   const [drag, setDrag] = useState(null);
   const [dragDelta, setDragDelta] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [memos, setMemos] = useState([]);
+  const [dayAction, setDayAction] = useState(null);
+  const [memoEdit, setMemoEdit] = useState(null);
 
-  // ── Load from cloud (Supabase) or localStorage on mount ──
+  // ── Load from persistent storage on mount ──
   useState(function () {
     (function loadData() {
-      cloudLoad().then(function (cloudData) {
-        var data = cloudData;
-        if (!data) {
-          try { var local = localStorage.getItem("bx-scheduler-data"); if (local) data = JSON.parse(local); } catch(e) {}
-        }
-        if (data) {
-          if (data.members && data.members.length > 0) setMembers(data.members);
-          if (data.projects && data.projects.length > 0) setProjects(data.projects);
-          if (data.visMem) setVisMem(data.visMem);
-        }
-        setLoaded(true);
-      }).catch(function () { setLoaded(true); });
+      try {
+        cloudLoad().then(function (cloudData) {
+          var data = cloudData;
+          if (!data) { try { var local = localStorage.getItem("bx-scheduler-data"); if (local) data = JSON.parse(local); } catch(e) {} }
+          if (data) {
+            if (data.members && data.members.length > 0) setMembers(data.members);
+            if (data.projects && data.projects.length > 0) setProjects(data.projects);
+            if (data.visMem) setVisMem(data.visMem);
+            if (data.memos) setMemos(data.memos);
+          }
+          setLoaded(true);
+        }).catch(function () { setLoaded(true); });
+      } catch (e) { setLoaded(true); }
     })();
   });
 
-  // ── Save to cloud + localStorage ──
-  function saveData(newProjects, newMembers, newVisMem) {
+  // ── Save to persistent storage whenever data changes ──
+  function saveData(newProjects, newMembers, newVisMem, newMemos) {
     try {
-      var obj = {
+      var data = JSON.stringify({
         projects: newProjects || projects,
         members: newMembers || members,
         visMem: newVisMem || visMem,
-      };
-      localStorage.setItem("bx-scheduler-data", JSON.stringify(obj));
-      cloudSave(obj);
+        memos: newMemos || memos,
+      });
+      localStorage.setItem("bx-scheduler-data", data);
+      cloudSave(JSON.parse(data));
     } catch (e) {}
   }
 
@@ -163,21 +164,28 @@ function App() {
   function updateProjects(fn) {
     setProjects(function (prev) {
       var next = typeof fn === "function" ? fn(prev) : fn;
-      setTimeout(function () { saveData(next, null, null); }, 0);
+      setTimeout(function () { saveData(next, null, null, null); }, 0);
       return next;
     });
   }
   function updateMembers(fn) {
     setMembers(function (prev) {
       var next = typeof fn === "function" ? fn(prev) : fn;
-      setTimeout(function () { saveData(null, next, null); }, 0);
+      setTimeout(function () { saveData(null, next, null, null); }, 0);
       return next;
     });
   }
   function updateVisMem(fn) {
     setVisMem(function (prev) {
       var next = typeof fn === "function" ? fn(prev) : fn;
-      setTimeout(function () { saveData(null, null, next); }, 0);
+      setTimeout(function () { saveData(null, null, next, null); }, 0);
+      return next;
+    });
+  }
+  function updateMemos(fn) {
+    setMemos(function (prev) {
+      var next = typeof fn === "function" ? fn(prev) : fn;
+      setTimeout(function () { saveData(null, null, null, next); }, 0);
       return next;
     });
   }
@@ -382,7 +390,6 @@ function App() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={function () { setShowSettings(true); }} style={{ background: "#F5F6F8", padding: "8px 12px", borderRadius: 8, fontSize: 12, border: "1px solid #E5E7EB" }}>⚙️</button>
           <button onClick={function () { setShowMemDlg(true); }} style={{ background: "#F5F6F8", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid #E5E7EB" }}>👥 구성원</button>
           <button onClick={function () { setCreating(true); }} style={{ background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>+ 프로젝트</button>
         </div>
@@ -485,10 +492,11 @@ function App() {
                       var isOpen = displayData.some(function (e) { return e.openDate === cell.str; }) && !cell.out;
                       var isDue = displayData.some(function (e) { return e.dueDate === cell.str; }) && !cell.out;
                       var isH = HOLS.indexOf(cell.str) >= 0;
+                      var cellMemos = memos.filter(function (m) { return m.date === cell.str; });
                       return (
-                        <div key={ci} style={{ padding: "6px 8px 2px", textAlign: "right", background: cell.out ? "#FAFAFA" : isT ? "#EFF6FF" : (dw2 === 0 || dw2 === 6 || isH) ? "#FAFAFA" : "#fff", borderRight: ci < 6 ? "1px solid #F0F1F3" : "none", opacity: cell.out ? 0.3 : 1 }}>
+                        <div key={ci} onClick={function () { if (!cell.out) setDayAction(cell.str); }} style={{ padding: "4px 6px 2px", textAlign: "right", cursor: cell.out ? "default" : "pointer", background: cell.out ? "#FAFAFA" : isT ? "#EFF6FF" : (dw2 === 0 || dw2 === 6 || isH) ? "#FAFAFA" : "#fff", borderRight: ci < 6 ? "1px solid #F0F1F3" : "none", opacity: cell.out ? 0.3 : 1 }}>
                           {isT
-                            ? <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 14, background: "#2563EB", fontSize: 12, fontWeight: 800, color: "#fff" }}>{dd}</span>
+                            ? <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 13, background: "#2563EB", fontSize: 11, fontWeight: 800, color: "#fff" }}>{dd}</span>
                             : <span style={{ fontSize: 13, fontWeight: (isOpen || isDue) ? 800 : 500, color: isDue ? "#16A34A" : isOpen ? "#EA580C" : isH ? "#DC2626" : dw2 === 0 ? "#DC262688" : dw2 === 6 ? "#2563EB88" : "#9CA3AF" }}>
                                 {dd}
                                 {isDue && <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: 3, background: "#16A34A", marginLeft: 2, verticalAlign: "super" }} />}
@@ -496,6 +504,12 @@ function App() {
                                 {isH && !isDue && !isOpen && <span style={{ fontSize: 7, color: "#DC2626", marginLeft: 1 }}>휴</span>}
                               </span>
                           }
+                          {cellMemos.length > 0 && <div style={{ textAlign: "left", marginTop: 2 }}>
+                            {cellMemos.slice(0, 2).map(function (memo) {
+                              return <div key={memo.id} onClick={function (ev) { ev.stopPropagation(); setMemoEdit(memo); }} style={{ fontSize: 9, padding: "1px 4px", marginBottom: 1, borderRadius: 3, background: (memo.color || "#6B7280") + "15", color: memo.color || "#6B7280", fontWeight: memo.bold ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", borderLeft: "2px solid " + (memo.color || "#6B7280") }}>{memo.text}</div>;
+                            })}
+                            {cellMemos.length > 2 && <div style={{ fontSize: 8, color: "#9CA3AF" }}>+{cellMemos.length - 2}개</div>}
+                          </div>}
                         </div>
                       );
                     })}
@@ -640,17 +654,41 @@ function App() {
         </div>
       )}
 
-      {/* SETTINGS MODAL */}
-      {showSettings && <SettingsModal onClose={function () { setShowSettings(false); }} onSave={function () { _sbClient = null; setShowSettings(false); location.reload(); }} />}
-
       {/* CREATE MODAL */}
-      {creating && <CreateModal members={members} onClose={function () { setCreating(false); }} onCreate={function (p) { updateProjects(function (prev) { return prev.concat([p]); }); setCreating(false); }} />}
+      {creating && <CreateModal members={members} initDate={typeof creating === "string" ? creating : ""} onClose={function () { setCreating(false); }} onCreate={function (p) { updateProjects(function (prev) { return prev.concat([p]); }); setCreating(false); }} />}
 
       {/* MEMBER MODAL */}
       {showMemDlg && <MemberModal members={members} setMembers={updateMembers} setVisMem={updateVisMem} onClose={function () { setShowMemDlg(false); }} />}
 
       {/* DETAIL MODAL */}
       {selectedProj && <DetailModal proj={selectedProj} members={members} onClose={function () { setSelectedId(null); }} onUpdate={function (u) { updateProjects(function (prev) { return prev.map(function (p) { return p.id === u.id ? u : p; }); }); }} onDelete={function (id) { updateProjects(function (prev) { return prev.filter(function (p) { return p.id !== id; }); }); setSelectedId(null); }} />}
+
+      {/* DAY ACTION POPUP */}
+      {dayAction && <div onClick={function () { setDayAction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.15)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div onClick={function (e) { e.stopPropagation(); }} style={{ background: "#fff", borderRadius: 14, padding: 20, width: 280, boxShadow: "0 12px 40px rgba(0,0,0,.12)" }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{fullDate(dayAction)}</div>
+          <div style={{ fontSize: 10, color: "#9CA3AF", marginBottom: 14 }}>{DN[dayOfWeek(dayAction)]}요일</div>
+          <button onClick={function () { setCreating(dayAction); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>📋 프로젝트 생성</button>
+          <button onClick={function () { setMemoEdit({ id: "", date: dayAction, text: "", fontSize: 12, color: "#6B7280", bold: false }); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "#F5F6F8", fontWeight: 600, fontSize: 12, border: "1px solid #E5E7EB" }}>📝 메모 추가</button>
+          {memos.filter(function (m) { return m.date === dayAction; }).length > 0 && <div style={{ marginTop: 10, borderTop: "1px solid #F0F1F3", paddingTop: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", marginBottom: 4 }}>메모</div>
+            {memos.filter(function (m) { return m.date === dayAction; }).map(function (memo) {
+              return <div key={memo.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", background: "#F9FAFB", borderRadius: 5, marginBottom: 3, fontSize: 10 }}>
+                <span style={{ flex: 1, color: memo.color || "#6B7280", fontWeight: memo.bold ? 700 : 400, fontSize: memo.fontSize || 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{memo.text}</span>
+                <button onClick={function () { setMemoEdit(memo); setDayAction(null); }} style={{ padding: "2px 5px", borderRadius: 3, fontSize: 8, background: "#EFF6FF", color: "#2563EB" }}>편집</button>
+                <button onClick={function () { updateMemos(function (prev) { return prev.filter(function (x) { return x.id !== memo.id; }); }); }} style={{ padding: "2px 5px", borderRadius: 3, fontSize: 8, background: "#FEE2E2", color: "#DC2626" }}>삭제</button>
+              </div>;
+            })}
+          </div>}
+        </div>
+      </div>}
+
+      {/* MEMO MODAL */}
+      {memoEdit && <MemoModal memo={memoEdit} onClose={function () { setMemoEdit(null); }} onSave={function (m) {
+        if (m.id) { updateMemos(function (prev) { return prev.map(function (x) { return x.id === m.id ? m : x; }); }); }
+        else { updateMemos(function (prev) { return prev.concat([Object.assign({}, m, { id: "memo_" + Date.now() })]); }); }
+        setMemoEdit(null);
+      }} />}
     </div>
   );
 }
@@ -700,16 +738,17 @@ function renderGanttBar(e, ganttStart, ganttDays, view, members) {
 }
 
 /* ============ CREATE MODAL ============ */
-function CreateModal({ members, onClose, onCreate }) {
+function CreateModal({ members, initDate, onClose, onCreate }) {
   var _s = useState(""); var name = _s[0]; var setName = _s[1];
   var _g = useState("B"); var grade = _g[0]; var setGrade = _g[1];
   var _md = useState(3); var md = _md[0]; var setMd = _md[1];
-  var _du = useState(""); var dueDate = _du[0]; var setDueDate = _du[1];
+  var _du = useState(initDate || ""); var dueDate = _du[0]; var setDueDate = _du[1];
   var _o = useState(""); var openDate = _o[0]; var setOpenDate = _o[1];
   var _sm = useState([]); var selMem = _sm[0]; var setSelMem = _sm[1];
-  var _cy = useState(new Date().getFullYear()); var calY = _cy[0]; var setCalY = _cy[1];
-  var _cm = useState(new Date().getMonth() + 1); var calM = _cm[0]; var setCalM = _cm[1];
+  var _cy = useState(initDate ? parseD(initDate).y : new Date().getFullYear()); var calY = _cy[0]; var setCalY = _cy[1];
+  var _cm = useState(initDate ? parseD(initDate).m : new Date().getMonth() + 1); var calM = _cm[0]; var setCalM = _cm[1];
   var _pick = useState("due"); var picking = _pick[0]; var setPicking = _pick[1];
+  var _memo = useState(""); var memo = _memo[0]; var setMemo = _memo[1];
 
   var wsStr = dueDate ? calcStart(dueDate, md) : "";
   var canCreate = name.trim() !== "" && dueDate !== "";
@@ -733,6 +772,7 @@ function CreateModal({ members, onClose, onCreate }) {
       dueDate: dueDate,
       openDate: openDate || dueDate,
       members: selMem.map(function (mid) { return { mid: mid, hold: false }; }),
+      memo: memo.trim(),
       changes: [],
     });
   }
@@ -823,6 +863,11 @@ function CreateModal({ members, onClose, onCreate }) {
               })}
             </div>
           </div>
+          {/* Memo */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>📝 메모 <span style={{ fontWeight: 400, color: "#9CA3AF" }}>선택사항</span></div>
+            <textarea value={memo} onChange={function (e) { setMemo(e.target.value); }} placeholder="프로젝트 관련 메모를 입력하세요" style={{ width: "100%", minHeight: 60, padding: "8px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+          </div>
         </div>
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 6, position: "sticky", bottom: 0, background: "#fff", borderRadius: "0 0 16px 16px" }}>
           <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "#F5F6F8", color: "#6B7280", fontSize: 12, fontWeight: 600 }}>취소</button>
@@ -912,6 +957,11 @@ function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
               })}
             </div>
           </div>}
+          {/* Memo */}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>📝 메모</div>
+            <textarea value={p.memo || ""} onChange={function (e) { onUpdate(Object.assign({}, p, { memo: e.target.value })); }} placeholder="프로젝트 메모" style={{ width: "100%", minHeight: 50, padding: "8px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", background: "#FAFAFA" }} />
+          </div>
         </div>
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between" }}>
           <button onClick={function () { onDelete(p.id); }} style={{ padding: "6px 14px", borderRadius: 8, background: "#FEE2E2", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>삭제</button>
@@ -1017,85 +1067,58 @@ function MemberModal({ members, setMembers, setVisMem, onClose }) {
   );
 }
 
-/* ============ SETTINGS MODAL ============ */
-function SettingsModal({ onClose, onSave }) {
-  var cfg = {};
-  try { cfg = JSON.parse(localStorage.getItem("bx-sb-cfg") || "{}"); } catch(e) {}
-  var _u = useState(cfg.url || ""); var sbUrl = _u[0]; var setSbUrl = _u[1];
-  var _k = useState(cfg.key || ""); var sbKey = _k[0]; var setSbKey = _k[1];
-  var _st = useState(""); var status = _st[0]; var setStatus = _st[1];
+/* ============ MEMO MODAL ============ */
+function MemoModal({ memo, onClose, onSave }) {
+  var COLORS = ["#6B7280","#DC2626","#2563EB","#16A34A","#EA580C","#7C3AED","#DB2777","#CA8A04"];
+  var SIZES = [10, 12, 14, 16, 20];
+  var _t = useState(memo.text || ""); var text = _t[0]; var setText = _t[1];
+  var _fs = useState(memo.fontSize || 12); var fs = _fs[0]; var setFs = _fs[1];
+  var _c = useState(memo.color || "#6B7280"); var color = _c[0]; var setColor = _c[1];
+  var _b = useState(memo.bold || false); var bold = _b[0]; var setBold = _b[1];
 
   function doSave() {
-    localStorage.setItem("bx-sb-cfg", JSON.stringify({ url: sbUrl.trim(), key: sbKey.trim() }));
-    setStatus("저장됨! 새로고침합니다...");
-    setTimeout(function () { onSave(); }, 800);
-  }
-
-  function doTest() {
-    if (!sbUrl.trim() || !sbKey.trim()) { setStatus("URL과 Key를 입력하세요"); return; }
-    setStatus("연결 테스트 중...");
-    try {
-      var sb = supabase.createClient(sbUrl.trim(), sbKey.trim());
-      sb.from("scheduler").select("id").limit(1).then(function (res) {
-        if (res.error) { setStatus("❌ 오류: " + res.error.message); }
-        else { setStatus("✅ 연결 성공! 저장 버튼을 눌러주세요."); }
-      }).catch(function (e) { setStatus("❌ 연결 실패: " + e.message); });
-    } catch(e) { setStatus("❌ " + e.message); }
-  }
-
-  function doReset() {
-    localStorage.removeItem("bx-sb-cfg");
-    localStorage.removeItem("bx-scheduler-data");
-    setStatus("초기화 완료. 새로고침합니다...");
-    setTimeout(function () { location.reload(); }, 800);
+    if (!text.trim()) return;
+    onSave({ id: memo.id, date: memo.date, text: text.trim(), fontSize: fs, color: color, bold: bold });
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={function (e) { e.stopPropagation(); }} style={{ background: "#fff", borderRadius: 16, width: 480, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.12)" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.25)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={function (e) { e.stopPropagation(); }} style={{ background: "#fff", borderRadius: 16, width: 440, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.12)" }}>
         <div style={{ padding: "14px 22px", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between" }}>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>⚙️ 클라우드 동기화 설정</span>
+          <span style={{ fontWeight: 800, fontSize: 16 }}>📝 {memo.id ? "메모 수정" : "새 메모"}</span>
           <button onClick={onClose} style={{ background: "none", color: "#9CA3AF", fontSize: 18 }}>✕</button>
         </div>
         <div style={{ padding: "16px 22px" }}>
-          <div style={{ padding: "10px 14px", background: "#EFF6FF", borderRadius: 8, fontSize: 11, color: "#2563EB", lineHeight: 1.6, marginBottom: 16 }}>
-            여러 기기에서 데이터를 공유하려면 <strong>Supabase</strong>(무료) 연결이 필요합니다.<br/>
-            미설정 시 현재 브라우저에만 데이터가 저장됩니다.
+          <div style={{ fontSize: 10, color: "#9CA3AF", marginBottom: 8 }}>{fullDate(memo.date)}</div>
+
+          {/* Toolbar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, padding: "6px 8px", background: "#F9FAFB", borderRadius: 8, border: "1px solid #E5E7EB", flexWrap: "wrap" }}>
+            {/* Bold */}
+            <button onClick={function () { setBold(!bold); }} style={{ width: 28, height: 28, borderRadius: 6, background: bold ? "#1A1D23" : "#fff", color: bold ? "#fff" : "#6B7280", fontWeight: 900, fontSize: 13, border: "1px solid #E5E7EB" }}>B</button>
+            <div style={{ width: 1, height: 18, background: "#E5E7EB" }} />
+            {/* Font size */}
+            {SIZES.map(function (s) {
+              return <button key={s} onClick={function () { setFs(s); }} style={{ minWidth: 26, height: 26, borderRadius: 5, background: fs === s ? "#2563EB" : "#fff", color: fs === s ? "#fff" : "#6B7280", fontSize: 10, fontWeight: 600, border: "1px solid " + (fs === s ? "#2563EB" : "#E5E7EB") }}>{s}</button>;
+            })}
+            <div style={{ width: 1, height: 18, background: "#E5E7EB" }} />
+            {/* Colors */}
+            {COLORS.map(function (c) {
+              return <button key={c} onClick={function () { setColor(c); }} style={{ width: 22, height: 22, borderRadius: "50%", background: c, border: color === c ? "3px solid #1A1D23" : "2px solid transparent", cursor: "pointer" }} />;
+            })}
           </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>Supabase Project URL</div>
-            <input value={sbUrl} onChange={function (e) { setSbUrl(e.target.value); }} placeholder="https://xxxx.supabase.co" style={{ width: "100%", fontSize: 12 }} />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>Supabase Anon Key</div>
-            <input value={sbKey} onChange={function (e) { setSbKey(e.target.value); }} placeholder="eyJhbGci..." style={{ width: "100%", fontSize: 12 }} />
-          </div>
+          {/* Text area */}
+          <textarea value={text} onChange={function (e) { setText(e.target.value); }} placeholder="메모 내용을 입력하세요" style={{ width: "100%", minHeight: 100, padding: "10px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: fs, fontWeight: bold ? 700 : 400, color: color, fontFamily: "inherit", resize: "vertical", outline: "none", lineHeight: 1.6 }} />
 
-          {status && <div style={{ padding: "8px 12px", background: status.includes("✅") ? "#F0FDF4" : status.includes("❌") ? "#FEF2F2" : "#F5F6F8", borderRadius: 6, fontSize: 11, color: status.includes("✅") ? "#16A34A" : status.includes("❌") ? "#DC2626" : "#6B7280", marginBottom: 12 }}>{status}</div>}
-
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            <button onClick={doTest} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#F5F6F8", fontSize: 11, fontWeight: 600, border: "1px solid #E5E7EB" }}>🔗 연결 테스트</button>
-            <button onClick={doSave} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563EB", color: "#fff", fontSize: 11, fontWeight: 700 }}>💾 저장</button>
-          </div>
-
-          <div style={{ borderTop: "1px solid #E5E7EB", paddingTop: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 8 }}>📋 Supabase 설정 가이드</div>
-            <div style={{ fontSize: 10, color: "#9CA3AF", lineHeight: 1.8 }}>
-              1. <strong>supabase.com</strong> 가입 (GitHub 로그인)<br/>
-              2. <strong>New Project</strong> 생성 (Region: Northeast Asia)<br/>
-              3. <strong>SQL Editor</strong>에서 아래 SQL 실행:<br/>
-            </div>
-            <div style={{ background: "#1A1D23", color: "#E8E8F0", padding: "10px 12px", borderRadius: 8, fontSize: 10, fontFamily: "monospace", lineHeight: 1.6, marginTop: 6, marginBottom: 8, overflowX: "auto", whiteSpace: "pre" }}>{"create table scheduler (\n  id int primary key default 1,\n  data jsonb default '{}',\n  updated_at timestamptz default now()\n);\ninsert into scheduler (id, data) values (1, '{}');\nalter table scheduler enable row level security;\ncreate policy \"public_all\" on scheduler for all using (true) with check (true);"}</div>
-            <div style={{ fontSize: 10, color: "#9CA3AF", lineHeight: 1.8 }}>
-              4. <strong>Settings → API</strong>에서 URL과 anon key 복사<br/>
-              5. 위 입력란에 붙여넣기 → 연결 테스트 → 저장
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12, borderTop: "1px solid #E5E7EB", paddingTop: 12 }}>
-            <button onClick={doReset} style={{ padding: "6px 12px", borderRadius: 6, background: "#FEE2E2", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>🗑 모든 데이터 초기화</button>
-          </div>
+          {/* Preview */}
+          {text.trim() && <div style={{ marginTop: 8, padding: "8px 12px", background: "#F9FAFB", borderRadius: 8, borderLeft: "3px solid " + color }}>
+            <div style={{ fontSize: 9, color: "#9CA3AF", marginBottom: 3 }}>미리보기</div>
+            <div style={{ fontSize: fs, fontWeight: bold ? 700 : 400, color: color, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{text}</div>
+          </div>}
+        </div>
+        <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 6 }}>
+          <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "#F5F6F8", color: "#6B7280", fontSize: 12, fontWeight: 600 }}>취소</button>
+          <button onClick={doSave} style={{ padding: "8px 20px", borderRadius: 8, background: text.trim() ? "#2563EB" : "#E5E7EB", color: text.trim() ? "#fff" : "#999", fontSize: 12, fontWeight: 700 }}>저장</button>
         </div>
       </div>
     </div>
