@@ -24,7 +24,6 @@ input:focus,textarea:focus{border-color:#2563EB}
 <div id="root"></div>
 <script type="text/babel">
 const {useState} = React;
-
 var _sbClient = null;
 var SB_DEFAULT_URL = "https://ayprudyppqmdodmufapc.supabase.co";
 var SB_DEFAULT_KEY = "sb_publishable_PeTv04Qtc0NECThCAKcz9g_AzrBIP0G";
@@ -124,7 +123,7 @@ function App() {
   const [memoEdit, setMemoEdit] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const ADMIN_PW = "bx2026";
+  const ADMIN_PW = "123456";
 
   // ── Load from persistent storage on mount ──
   useState(function () {
@@ -303,8 +302,16 @@ function App() {
   // Gantt dates
   var ganttStart = view === "week" ? weekMon : makeDate(year, month, 1);
   var ganttDays = view === "week" ? 7 : new Date(year, month, 0).getDate();
+  var ganttEnd = addDays(ganttStart, ganttDays - 1);
   var ganttDates = [];
   for (var gi = 0; gi < ganttDays; gi++) ganttDates.push(addDays(ganttStart, gi));
+
+  // Filter projects visible in the gantt range
+  var ganttData = displayData.filter(function (e) {
+    var workOverlap = e.startStr <= ganttEnd && e.dueDate >= ganttStart;
+    var openInRange = e.openDate >= ganttStart && e.openDate <= ganttEnd;
+    return workOverlap || openInRange;
+  });
 
   function barsForWeek(wk) {
     var ws = wk[0].str;
@@ -354,10 +361,16 @@ function App() {
 
   // Member grouped
   var memberGrouped = null;
+  var ganttMemberGrouped = null;
   if (sTab === "member") {
     var gradeOrder = { S: 0, A: 1, B: 2, C: 3, D: 4, E: 5 };
     memberGrouped = members.filter(function(m) { return visMem.indexOf(m.id) >= 0; }).map(function (m) {
       var items = enriched.filter(function (e) { return e.members.some(function (pm) { return pm.mid === m.id; }); });
+      items.sort(function (a, b) { return (gradeOrder[a.grade] || 9) - (gradeOrder[b.grade] || 9); });
+      return { member: m, items: items };
+    }).filter(function (g) { return g.items.length > 0; });
+    ganttMemberGrouped = members.filter(function(m) { return visMem.indexOf(m.id) >= 0; }).map(function (m) {
+      var items = ganttData.filter(function (e) { return e.members.some(function (pm) { return pm.mid === m.id; }); });
       items.sort(function (a, b) { return (gradeOrder[a.grade] || 9) - (gradeOrder[b.grade] || 9); });
       return { member: m, items: items };
     }).filter(function (g) { return g.items.length > 0; });
@@ -609,8 +622,8 @@ function App() {
             </div>
             {/* Project list */}
             <div style={{ padding: "6px 0" }}>
-              <div style={{ padding: "6px 14px", fontSize: 10, fontWeight: 700, color: "#9CA3AF" }}>프로젝트 ({displayData.length})</div>
-              {sTab === "member" && memberGrouped ? memberGrouped.map(function (g) {
+              <div style={{ padding: "6px 14px", fontSize: 10, fontWeight: 700, color: "#9CA3AF" }}>프로젝트 ({ganttData.length})</div>
+              {sTab === "member" && ganttMemberGrouped ? ganttMemberGrouped.map(function (g) {
                 return (
                   <div key={g.member.id}>
                     <div style={{ padding: "6px 14px", background: "#F9FAFB", display: "flex", alignItems: "center", gap: 5, borderBottom: "1px solid #F0F1F3" }}>
@@ -619,8 +632,8 @@ function App() {
                     {g.items.map(function (e) { return <SidebarItem key={e.id} e={e} members={members} onClick={function () { setSelectedId(e.id); }} />; })}
                   </div>
                 );
-              }) : displayData.map(function (e) { return <SidebarItem key={e.id} e={e} members={members} onClick={function () { setSelectedId(e.id); }} />; })}
-              {displayData.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 11 }}>프로젝트 없음</div>}
+              }) : ganttData.map(function (e) { return <SidebarItem key={e.id} e={e} members={members} onClick={function () { setSelectedId(e.id); }} />; })}
+              {ganttData.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 11 }}>프로젝트 없음</div>}
             </div>
           </div>
           {/* Timeline */}
@@ -639,7 +652,7 @@ function App() {
               })}
             </div>
             <div>
-              {sTab === "member" && memberGrouped ? memberGrouped.map(function (g) {
+              {sTab === "member" && ganttMemberGrouped ? ganttMemberGrouped.map(function (g) {
                 return (
                   <div key={g.member.id}>
                     <div style={{ height: 26, display: "flex", alignItems: "center", padding: "0 8px", background: "#F9FAFB", borderBottom: "1px solid #E5E7EB", minWidth: view === "week" ? "100%" : ganttDays * 36 }}>
@@ -649,8 +662,8 @@ function App() {
                     {g.items.map(function (e) { return renderGanttBar(e, ganttStart, ganttDays, view, members); })}
                   </div>
                 );
-              }) : displayData.map(function (e) { return renderGanttBar(e, ganttStart, ganttDays, view, members); })}
-              {displayData.length === 0 && <div style={{ padding: 50, textAlign: "center", color: "#9CA3AF", fontSize: 12 }}>프로젝트 없음</div>}
+              }) : ganttData.map(function (e) { return renderGanttBar(e, ganttStart, ganttDays, view, members); })}
+              {ganttData.length === 0 && <div style={{ padding: 50, textAlign: "center", color: "#9CA3AF", fontSize: 12 }}>프로젝트 없음</div>}
             </div>
           </div>
         </div>
@@ -724,20 +737,32 @@ function renderGanttBar(e, ganttStart, ganttDays, view, members) {
   var bed = daysDiff(ganttStart, e.dueDate);
   var cs = Math.max(0, bsd);
   var ce = Math.min(ganttDays, bed + 1);
-  if (ce <= 0 || cs >= ganttDays) return null;
+  var hasBar = ce > 0 && cs < ganttDays;
+  var openCol = daysDiff(ganttStart, e.openDate);
+  var hasOpen = openCol >= 0 && openCol < ganttDays;
+  if (!hasBar && !hasOpen) return null;
   var mm = e.members.length > 0 ? members.find(function (m) { return m.id === e.members[0].mid; }) : null;
-  var l = isW ? (cs / 7 * 100) + "%" : (cs * cW) + "px";
-  var w = isW ? (Math.max(1, ce - cs) / 7 * 100) + "%" : (Math.max(1, ce - cs) * cW) + "px";
+  var bc = mm ? mm.color : e.gc;
   return (
     <div key={e.id} style={{ height: 40, position: "relative", borderBottom: "1px solid #F0F1F3", minWidth: isW ? "100%" : ganttDays * cW }}>
-      <div style={{ position: "absolute", left: l, width: w, top: 5, height: 30, borderRadius: 7, cursor: "pointer", background: e.gc + "12", border: "1.5px solid " + e.gc + "33", display: "flex", alignItems: "center", padding: "0 8px", overflow: "hidden" }}>
-        {mm && <><span style={{ width: 6, height: 6, borderRadius: "50%", background: mm.color, flexShrink: 0, marginRight: 3 }} /><span style={{ fontSize: 9, fontWeight: 700, color: mm.color, marginRight: 3, flexShrink: 0 }}>{mm.name}</span></>}
-        <div style={{ width: 15, height: 15, borderRadius: 4, background: e.gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 8, color: "#fff", marginRight: 4, flexShrink: 0 }}>{e.grade}</div>
-        <span style={{ fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{e.name}</span>
-        <span style={{ fontSize: 8, color: "#9CA3AF", marginLeft: 3, flexShrink: 0 }}>{e.md}MD</span>
-        <span style={{ fontSize: 7, fontWeight: 700, color: "#16A34A", marginLeft: 2, flexShrink: 0 }}>완료{shortDate(e.dueDate)}</span>
-        <span style={{ fontSize: 7, fontWeight: 700, color: e.gc, marginLeft: 2, flexShrink: 0 }}>OPEN{shortDate(e.openDate)}</span>
-      </div>
+      {hasBar && (function () {
+        var l = isW ? (cs / 7 * 100) + "%" : (cs * cW) + "px";
+        var w = isW ? (Math.max(1, ce - cs) / 7 * 100) + "%" : (Math.max(1, ce - cs) * cW) + "px";
+        return <div style={{ position: "absolute", left: l, width: w, top: 5, height: 30, borderRadius: 7, cursor: "pointer", background: bc + "18", borderLeft: "3px solid " + bc, borderTop: "1px solid " + bc + "22", borderBottom: "1px solid " + bc + "22", borderRight: "1px solid " + bc + "22", display: "flex", alignItems: "center", padding: "0 6px", overflow: "hidden" }}>
+          {mm && <><span style={{ width: 6, height: 6, borderRadius: "50%", background: bc, flexShrink: 0, marginRight: 3 }} /><span style={{ fontSize: 9, fontWeight: 700, color: bc, marginRight: 3, flexShrink: 0 }}>{mm.name}</span></>}
+          <div style={{ width: 15, height: 15, borderRadius: 4, background: e.gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 8, color: "#fff", marginRight: 4, flexShrink: 0 }}>{e.grade}</div>
+          <span style={{ fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{e.name}</span>
+          <span style={{ fontSize: 8, color: "#9CA3AF", marginLeft: 3, flexShrink: 0 }}>{e.md}MD</span>
+        </div>;
+      })()}
+      {hasOpen && (function () {
+        var ol = isW ? (openCol / 7 * 100) + "%" : (openCol * cW) + "px";
+        var ow = isW ? (1 / 7 * 100) + "%" : cW + "px";
+        return <div style={{ position: "absolute", left: ol, width: "auto", maxWidth: isW ? ((7 - openCol) / 7 * 100) + "%" : (ganttDays - openCol) * cW + "px", top: 5, height: 30, display: "flex", alignItems: "center", gap: 3, padding: "0 5px", borderRadius: 5, background: e.gc + "14", border: "1.5px solid " + e.gc + "44", cursor: "pointer" }}>
+          <span style={{ fontSize: 7, fontWeight: 800, background: e.gc, color: "#fff", padding: "2px 5px", borderRadius: 4, flexShrink: 0 }}>OPEN</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: e.gc, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</span>
+        </div>;
+      })()}
     </div>
   );
 }
@@ -932,11 +957,12 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
             })}
           </div>}
           {/* Link */}
-          {(p.link || isAdmin) && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            {isAdmin ? (eLink
+          {(p.link || isAdmin) && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+            {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" onClick={function (e) { e.stopPropagation(); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#EFF6FF", color: "#2563EB", textDecoration: "none", border: "1px solid #BFDBFE", display: "inline-flex", alignItems: "center", gap: 3 }}>🔗 링크 열기 ↗</a>}
+            {isAdmin && (eLink
               ? <div style={{ display: "flex", gap: 3, flex: 1 }}><input value={tmpL} onChange={function (e) { setTmpL(e.target.value); }} placeholder="https://..." style={{ flex: 1, fontSize: 11, padding: "4px 8px" }} /><button onClick={function () { onUpdate(Object.assign({}, p, { link: tmpL.trim() })); setELink(false); }} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button><button onClick={function () { setELink(false); }} style={{ padding: "3px 6px", borderRadius: 4, fontSize: 9, background: "#F3F4F6" }}>취소</button></div>
-              : <button onClick={function () { setELink(true); }} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, background: "#EFF6FF", color: "#2563EB" }}>{p.link ? "🔗 링크 수정" : "🔗 링크 추가"}</button>
-            ) : (p.link && <a href={p.link} target="_blank" rel="noopener" style={{ fontSize: 10, color: "#2563EB", textDecoration: "underline" }}>🔗 관련 링크</a>)}
+              : <button onClick={function () { setELink(true); }} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, background: "#F5F6F8", color: "#6B7280", border: "1px solid #E5E7EB" }}>{p.link ? "✏️ 수정" : "🔗 링크 추가"}</button>
+            )}
           </div>}
           <div style={{ marginTop: 8, display: "flex", gap: 8, fontSize: 11, color: "#6B7280", flexWrap: "wrap", alignItems: "center" }}>
             <span>🎯 완료 {isAdmin && eDue
@@ -1171,7 +1197,6 @@ function LoginModal({ onClose, onLogin }) {
     </div>
   );
 }
-
 ReactDOM.render(React.createElement(App), document.getElementById("root"));
 </script>
 </body>
