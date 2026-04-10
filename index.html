@@ -31,22 +31,18 @@ function getSB() {
   if (_sbClient) return _sbClient;
   try {
     var cfg = JSON.parse(localStorage.getItem("bx-sb-cfg") || "{}");
-    var url = cfg.url || SB_DEFAULT_URL;
-    var key = cfg.key || SB_DEFAULT_KEY;
+    var url = cfg.url || SB_DEFAULT_URL; var key = cfg.key || SB_DEFAULT_KEY;
     if (url && key) { _sbClient = supabase.createClient(url, key); return _sbClient; }
-  } catch(e) {}
-  return null;
+  } catch(e) {} return null;
 }
 function cloudLoad() {
-  var sb = getSB();
-  if (!sb) return Promise.resolve(null);
+  var sb = getSB(); if (!sb) return Promise.resolve(null);
   return sb.from("scheduler").select("data").eq("id", 1).single().then(function(res) {
     if (res.data && res.data.data) return res.data.data; return null;
   }).catch(function() { return null; });
 }
 function cloudSave(data) {
-  var sb = getSB();
-  if (!sb) return Promise.resolve();
+  var sb = getSB(); if (!sb) return Promise.resolve();
   return sb.from("scheduler").upsert({ id: 1, data: data, updated_at: new Date().toISOString() }).then(function() {}).catch(function() {});
 }
 
@@ -240,7 +236,7 @@ function App() {
     var status = "예정";
     if (today > due) status = "완료";
     else if (today >= startStr) status = "진행";
-    return { id: p.id, name: p.name, grade: p.grade, md: p.md, openDate: p.openDate, dueDate: due, members: p.members || [], changes: p.changes || [], startStr: startStr, gc: g.color, status: status };
+    return { id: p.id, name: p.name, grade: p.grade, md: p.md, openDate: p.openDate, dueDate: due, members: p.members || [], changes: p.changes || [], link: p.link || "", memo: p.memo || "", startStr: startStr, gc: g.color, status: status };
   });
 
   // Filter by visible members when in member mode
