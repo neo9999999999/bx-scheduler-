@@ -24,27 +24,10 @@ input:focus,textarea:focus{border-color:#2563EB}
 <div id="root"></div>
 <script type="text/babel">
 const {useState} = React;
-var _sbClient = null;
-var SB_DEFAULT_URL = "https://ayprudyppqmdodmufapc.supabase.co";
-var SB_DEFAULT_KEY = "sb_publishable_PeTv04Qtc0NECThCAKcz9g_AzrBIP0G";
-function getSB() {
-  if (_sbClient) return _sbClient;
-  try {
-    var cfg = JSON.parse(localStorage.getItem("bx-sb-cfg") || "{}");
-    var url = cfg.url || SB_DEFAULT_URL; var key = cfg.key || SB_DEFAULT_KEY;
-    if (url && key) { _sbClient = supabase.createClient(url, key); return _sbClient; }
-  } catch(e) {} return null;
-}
-function cloudLoad() {
-  var sb = getSB(); if (!sb) return Promise.resolve(null);
-  return sb.from("scheduler").select("data").eq("id", 1).single().then(function(res) {
-    if (res.data && res.data.data) return res.data.data; return null;
-  }).catch(function() { return null; });
-}
-function cloudSave(data) {
-  var sb = getSB(); if (!sb) return Promise.resolve();
-  return sb.from("scheduler").upsert({ id: 1, data: data, updated_at: new Date().toISOString() }).then(function() {}).catch(function() {});
-}
+var _sbClient=null;var SB_DEFAULT_URL="https://ayprudyppqmdodmufapc.supabase.co";var SB_DEFAULT_KEY="sb_publishable_PeTv04Qtc0NECThCAKcz9g_AzrBIP0G";
+function getSB(){if(_sbClient)return _sbClient;try{var cfg=JSON.parse(localStorage.getItem("bx-sb-cfg")||"{}");var url=cfg.url||SB_DEFAULT_URL;var key=cfg.key||SB_DEFAULT_KEY;if(url&&key){_sbClient=supabase.createClient(url,key);return _sbClient;}}catch(e){}return null;}
+function cloudLoad(){var sb=getSB();if(!sb)return Promise.resolve(null);return sb.from("scheduler").select("data").eq("id",1).single().then(function(res){if(res.data&&res.data.data)return res.data.data;return null;}).catch(function(){return null;});}
+function cloudSave(data){var sb=getSB();if(!sb)return Promise.resolve();return sb.from("scheduler").upsert({id:1,data:data,updated_at:new Date().toISOString()}).then(function(){}).catch(function(){});}
 
 
 const GRADES = {
@@ -317,41 +300,40 @@ function App() {
       var e = displayData[ei];
       var workInWeek = !(e.dueDate < ws || e.startStr > we);
       var openInWeek = e.openDate >= ws && e.openDate <= we;
-      if (!workInWeek && !openInWeek) continue;
-      // Build segments: consecutive working days only
+      var waitStart = e.dueDate < e.openDate ? addDays(e.dueDate, 1) : "";
+      var waitInWeek = waitStart && !(e.openDate < ws || waitStart > we);
+      if (!workInWeek && !openInWeek && !waitInWeek) continue;
+      // Build work segments
       var segs = [];
       var segStart = -1;
       for (var ci = 0; ci <= 6; ci++) {
         var dayStr = wk[ci].str;
         var inRange = dayStr >= e.startStr && dayStr <= e.dueDate;
         var isWork = inRange && !isOffDay(dayStr);
-        if (isWork) {
-          if (segStart < 0) segStart = ci;
-        } else {
-          if (segStart >= 0) {
-            segs.push({ cs: segStart, ce: ci - 1 });
-            segStart = -1;
-          }
-        }
+        if (isWork) { if (segStart < 0) segStart = ci; }
+        else { if (segStart >= 0) { segs.push({ cs: segStart, ce: ci - 1 }); segStart = -1; } }
       }
       if (segStart >= 0) segs.push({ cs: segStart, ce: 6 });
-
+      // Build wait segments (dueDate+1 to openDate, filled area)
+      var waitSegs = [];
+      if (waitStart && e.openDate > e.dueDate) {
+        var wSegStart = -1;
+        for (var wi2 = 0; wi2 <= 6; wi2++) {
+          var ds2 = wk[wi2].str;
+          var inWait = ds2 >= waitStart && ds2 <= e.openDate;
+          if (inWait) { if (wSegStart < 0) wSegStart = wi2; }
+          else { if (wSegStart >= 0) { waitSegs.push({ cs: wSegStart, ce: wi2 - 1 }); wSegStart = -1; } }
+        }
+        if (wSegStart >= 0) waitSegs.push({ cs: wSegStart, ce: 6 });
+      }
       // openDate column
       var openCol = -1;
-      if (e.openDate >= ws && e.openDate <= we) {
-        openCol = daysDiff(ws, e.openDate);
-      }
-      if (segs.length > 0 || openCol >= 0) {
-        rows.push({
-          e: e,
-          segs: segs,
-          openCol: openCol,
-          isFirst: e.startStr >= ws,
-          hasDue: e.dueDate >= ws && e.dueDate <= we,
-        });
+      if (e.openDate >= ws && e.openDate <= we) { openCol = daysDiff(ws, e.openDate); }
+      if (segs.length > 0 || waitSegs.length > 0 || openCol >= 0) {
+        rows.push({ e: e, segs: segs, waitSegs: waitSegs, openCol: openCol, isFirst: e.startStr >= ws, hasDue: e.dueDate >= ws && e.dueDate <= we });
       }
     }
-    rows.sort(function (a, b) { var ac = a.segs.length > 0 ? a.segs[0].cs : a.openCol; var bc = b.segs.length > 0 ? b.segs[0].cs : b.openCol; return ac - bc; });
+    rows.sort(function (a, b) { var ac = a.segs.length > 0 ? a.segs[0].cs : (a.waitSegs.length > 0 ? a.waitSegs[0].cs : a.openCol); var bc = b.segs.length > 0 ? b.segs[0].cs : (b.waitSegs.length > 0 ? b.waitSegs[0].cs : b.openCol); return ac - bc; });
     return rows;
   }
 
@@ -569,8 +551,29 @@ function App() {
                               </div>
                             );
                           })}
-                          {/* Open date marker */}
-                          {bar.openCol >= 0 && (function () {
+                          {/* Wait period segments (dueDate to openDate) */}
+                          {bar.waitSegs.map(function (seg, si) {
+                            var leftPct = (seg.cs / 7 * 100) + shiftPct;
+                            var widthPct = (seg.ce - seg.cs + 1) / 7 * 100;
+                            var isOpenDay = bar.openCol >= seg.cs && bar.openCol <= seg.ce;
+                            return (
+                              <div key={"w" + si}
+                                onClick={function () { setSelectedId(e.id); }}
+                                style={{
+                                  position: "absolute", top: 0, left: leftPct + "%", width: widthPct + "%", height: 24,
+                                  borderRadius: 5, background: e.gc + "12",
+                                  borderTop: "1.5px dashed " + e.gc + "55", borderBottom: "1.5px dashed " + e.gc + "55",
+                                  borderLeft: "1.5px dashed " + e.gc + "55", borderRight: "1.5px dashed " + e.gc + "55",
+                                  display: "flex", alignItems: "center", padding: "0 4px",
+                                  cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", zIndex: 1,
+                                }}>
+                                {si === 0 && bar.segs.length === 0 && <span style={{ fontSize: 9, fontWeight: 600, color: e.gc, overflow: "hidden", textOverflow: "ellipsis" }}>{e.name}</span>}
+                                {isOpenDay && <span style={{ fontSize: 7, fontWeight: 800, background: e.gc, color: "#fff", padding: "2px 5px", borderRadius: 4, marginLeft: "auto", flexShrink: 0 }}>OPEN</span>}
+                              </div>
+                            );
+                          })}
+                          {/* Open date marker (if no wait segs cover it) */}
+                          {bar.openCol >= 0 && bar.waitSegs.length === 0 && (function () {
                             var oLeft = (bar.openCol / 7 * 100) + shiftPct;
                             return (
                               <div onClick={function () { setSelectedId(e.id); }} style={{
@@ -672,7 +675,7 @@ function App() {
       {showMemDlg && <MemberModal members={members} setMembers={updateMembers} setVisMem={updateVisMem} onClose={function () { setShowMemDlg(false); }} />}
 
       {/* DETAIL MODAL */}
-      {selectedProj && <DetailModal proj={selectedProj} members={members} isAdmin={isAdmin} onClose={function () { setSelectedId(null); }} onUpdate={function (u) { updateProjects(function (prev) { return prev.map(function (p) { return p.id === u.id ? u : p; }); }); }} onDelete={function (id) { updateProjects(function (prev) { return prev.filter(function (p) { return p.id !== id; }); }); setSelectedId(null); }} />}
+      {selectedProj && <DetailModal proj={selectedProj} members={members} isAdmin={isAdmin} onClose={function () { setSelectedId(null); }} onUpdate={function (changes) { updateProjects(function (prev) { return prev.map(function (p) { return p.id === selectedId ? Object.assign({}, p, changes) : p; }); }); }} onDelete={function (id) { updateProjects(function (prev) { return prev.filter(function (p) { return p.id !== id; }); }); setSelectedId(null); }} />}
 
       {/* DAY ACTION POPUP */}
       {dayAction && <div onClick={function () { setDayAction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.15)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -940,7 +943,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
               {isAdmin ? <button onClick={function () { setEGrade(!eGrade); }} style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0, cursor: "pointer", border: eGrade ? "2px solid #1A1D23" : "none" }}>{p.grade}</button>
               : <div style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0 }}>{p.grade}</div>}
               {isAdmin && eName
-                ? <div style={{ display: "flex", gap: 4, flex: 1 }}><input value={tmpN} onChange={function (e) { setTmpN(e.target.value); }} style={{ flex: 1, fontSize: 14, fontWeight: 700 }} /><button onClick={function () { onUpdate(Object.assign({}, p, { name: tmpN.trim() || p.name })); setEName(false); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, background: "#2563EB", color: "#fff", fontWeight: 700 }}>저장</button></div>
+                ? <div style={{ display: "flex", gap: 4, flex: 1 }}><input value={tmpN} onChange={function (e) { setTmpN(e.target.value); }} style={{ flex: 1, fontSize: 14, fontWeight: 700 }} /><button onClick={function () { onUpdate({ name: tmpN.trim() || p.name }); setEName(false); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, background: "#2563EB", color: "#fff", fontWeight: 700 }}>저장</button></div>
                 : <span style={{ fontWeight: 800, fontSize: 16, cursor: isAdmin ? "pointer" : (p.link ? "pointer" : "default"), borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }} onClick={function () { if (isAdmin) setEName(true); else if (p.link) { var url = p.link; if (url.indexOf("://") < 0) url = "https://" + url; window.open(url, "_blank", "noopener"); } }}>{p.name}{p.link && !isAdmin && <span style={{ fontSize: 10, color: "#2563EB", marginLeft: 4 }}>🔗</span>}</span>
               }
             </div>
@@ -949,29 +952,29 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
           {isAdmin && eGrade && <div style={{ marginTop: 8, display: "flex", gap: 3 }}>
             {Object.keys(GRADES).map(function (g) {
               var isActive = p.grade === g;
-              return <button key={g} onClick={function () { onUpdate(Object.assign({}, p, { grade: g })); setEGrade(false); }} style={{ flex: 1, padding: "6px 0", borderRadius: 6, textAlign: "center", background: isActive ? GRADES[g].color : "#F5F6F8", color: isActive ? "#fff" : "#6B7280", fontWeight: 800, fontSize: 13, border: isActive ? "none" : "1px solid #E5E7EB" }}>{g}<div style={{ fontSize: 8, opacity: 0.7 }}>{GRADES[g].md}MD</div></button>;
+              return <button key={g} onClick={function () { onUpdate({ grade: g }); setEGrade(false); }} style={{ flex: 1, padding: "6px 0", borderRadius: 6, textAlign: "center", background: isActive ? GRADES[g].color : "#F5F6F8", color: isActive ? "#fff" : "#6B7280", fontWeight: 800, fontSize: 13, border: isActive ? "none" : "1px solid #E5E7EB" }}>{g}<div style={{ fontSize: 8, opacity: 0.7 }}>{GRADES[g].md}MD</div></button>;
             })}
           </div>}
           {/* Link */}
           {(p.link || isAdmin) && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
             {p.link && <button onClick={function (e) { e.stopPropagation(); var url = p.link; if (url && url.indexOf("://") < 0) url = "https://" + url; window.open(url, "_blank", "noopener"); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", display: "inline-flex", alignItems: "center", gap: 3 }}>🔗 링크 열기 ↗</button>}
             {isAdmin && (eLink
-              ? <div style={{ display: "flex", gap: 3, flex: 1 }}><input value={tmpL} onChange={function (e) { setTmpL(e.target.value); }} placeholder="https://..." style={{ flex: 1, fontSize: 11, padding: "4px 8px" }} /><button onClick={function () { onUpdate(Object.assign({}, p, { link: tmpL.trim() })); setELink(false); }} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button><button onClick={function () { setELink(false); }} style={{ padding: "3px 6px", borderRadius: 4, fontSize: 9, background: "#F3F4F6" }}>취소</button></div>
+              ? <div style={{ display: "flex", gap: 3, flex: 1 }}><input value={tmpL} onChange={function (e) { setTmpL(e.target.value); }} placeholder="https://..." style={{ flex: 1, fontSize: 11, padding: "4px 8px" }} /><button onClick={function () { onUpdate({ link: tmpL.trim() }); setELink(false); }} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button><button onClick={function () { setELink(false); }} style={{ padding: "3px 6px", borderRadius: 4, fontSize: 9, background: "#F3F4F6" }}>취소</button></div>
               : <button onClick={function () { setELink(true); }} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, background: "#F5F6F8", color: "#6B7280", border: "1px solid #E5E7EB" }}>{p.link ? "✏️ 수정" : "🔗 링크 추가"}</button>
             )}
           </div>}
           <div style={{ marginTop: 8, display: "flex", gap: 8, fontSize: 11, color: "#6B7280", flexWrap: "wrap", alignItems: "center" }}>
             <span>🎯 완료 {isAdmin && eDue
-              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpD} onChange={function (e) { setTmpD(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpD) { onUpdate(Object.assign({}, p, { dueDate: tmpD })); setEDue(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#16A34A", color: "#fff" }}>저장</button></span>
+              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpD} onChange={function (e) { setTmpD(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpD) { onUpdate({ dueDate: tmpD }); setEDue(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#16A34A", color: "#fff" }}>저장</button></span>
               : <strong onClick={function () { if (isAdmin) setEDue(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #16A34A" : "none", color: "#16A34A" }}>{fullDate(due)}</strong>
             }</span>
             <span>🚀 오픈 {isAdmin && eOpen
-              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpO} onChange={function (e) { setTmpO(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpO) { onUpdate(Object.assign({}, p, { openDate: tmpO })); setEOpen(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#EA580C", color: "#fff" }}>저장</button></span>
+              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpO} onChange={function (e) { setTmpO(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpO) { onUpdate({ openDate: tmpO }); setEOpen(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#EA580C", color: "#fff" }}>저장</button></span>
               : <strong onClick={function () { if (isAdmin) setEOpen(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #EA580C" : "none", color: "#EA580C" }}>{fullDate(p.openDate)}</strong>
             }</span>
             <span>🔨 시작 <strong>{fullDate(ws)}</strong></span>
             <span>⏱ {isAdmin && eMd
-              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="number" value={tmpMd} onChange={function (e) { setTmpMd(e.target.value); }} style={{ width: 50, fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { var v = parseInt(tmpMd); if (v > 0) { onUpdate(Object.assign({}, p, { md: v })); setEMd(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button></span>
+              ? <span style={{ display: "inline-flex", gap: 3 }}><input type="number" value={tmpMd} onChange={function (e) { setTmpMd(e.target.value); }} style={{ width: 50, fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { var v = parseInt(tmpMd); if (v > 0) { onUpdate({ md: v }); setEMd(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button></span>
               : <strong onClick={function () { if (isAdmin) setEMd(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }}>{p.md}MD</strong>
             }</span>
           </div>
@@ -987,7 +990,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: mem.color }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: mem.color, padding: "1px 5px", borderRadius: 3, background: mem.color + "12" }}>{idx === 0 ? "메인" : "서브" + idx}</span>
                 <span style={{ flex: 1, fontWeight: 600, fontSize: 12 }}>{mem.name}</span>
-                <button onClick={function () { onUpdate(Object.assign({}, p, { members: p.members.filter(function (x) { return x.mid !== pm.mid; }) })); }} style={{ padding: "3px 6px", borderRadius: 5, fontSize: 9, background: "#FEE2E2", color: "#DC2626", display: isAdmin ? "block" : "none" }}>제외</button>
+                <button onClick={function () { onUpdate({ members: (p.members || []).filter(function (x) { return x.mid !== pm.mid; }) }); }} style={{ padding: "3px 6px", borderRadius: 5, fontSize: 9, background: "#FEE2E2", color: "#DC2626", display: isAdmin ? "block" : "none" }}>제외</button>
               </div>
             );
           })}
@@ -995,7 +998,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
             <div style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", marginBottom: 5 }}>+ 담당자 추가</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {avail.map(function (m) {
-                return <button key={m.id} onClick={function () { onUpdate(Object.assign({}, p, { members: (p.members || []).concat([{ mid: m.id, hold: false }]) })); }} style={{ padding: "6px 12px", borderRadius: 16, fontSize: 10, fontWeight: 600, background: m.color + "10", color: m.color, border: "1.5px dashed " + m.color + "66", display: "flex", alignItems: "center", gap: 4 }}>
+                return <button key={m.id} onClick={function () { onUpdate({ members: (p.members || []).concat([{ mid: m.id, hold: false }]) }); }} style={{ padding: "6px 12px", borderRadius: 16, fontSize: 10, fontWeight: 600, background: m.color + "10", color: m.color, border: "1.5px dashed " + m.color + "66", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: m.color }} />{m.name} 추가
                 </button>;
               })}
@@ -1004,7 +1007,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
           {/* Memo */}
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>📝 메모</div>
-            <textarea value={p.memo || ""} onChange={function (e) { onUpdate(Object.assign({}, p, { memo: e.target.value })); }} placeholder="프로젝트 메모" style={{ width: "100%", minHeight: 50, padding: "8px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", background: "#FAFAFA" }} />
+            <textarea value={p.memo || ""} onChange={function (e) { onUpdate({ memo: e.target.value }); }} placeholder="프로젝트 메모" style={{ width: "100%", minHeight: 50, padding: "8px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", background: "#FAFAFA" }} />
           </div>
         </div>
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between" }}>
