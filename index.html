@@ -945,7 +945,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
               : <div style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0 }}>{p.grade}</div>}
               {isAdmin && eName
                 ? <div style={{ display: "flex", gap: 4, flex: 1 }}><input value={tmpN} onChange={function (e) { setTmpN(e.target.value); }} style={{ flex: 1, fontSize: 14, fontWeight: 700 }} /><button onClick={function () { onUpdate(Object.assign({}, p, { name: tmpN.trim() || p.name })); setEName(false); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, background: "#2563EB", color: "#fff", fontWeight: 700 }}>저장</button></div>
-                : <span style={{ fontWeight: 800, fontSize: 16, cursor: isAdmin ? "pointer" : (p.link ? "pointer" : "default"), borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }} onClick={function () { if (isAdmin) setEName(true); else if (p.link) window.open(p.link, "_blank"); }}>{p.name}{p.link && !isAdmin && <span style={{ fontSize: 10, color: "#2563EB", marginLeft: 4 }}>🔗</span>}</span>
+                : <span style={{ fontWeight: 800, fontSize: 16, cursor: isAdmin ? "pointer" : (p.link ? "pointer" : "default"), borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }} onClick={function () { if (isAdmin) setEName(true); else if (p.link) { var url = p.link; if (url.indexOf("://") < 0) url = "https://" + url; window.open(url, "_blank", "noopener"); } }}>{p.name}{p.link && !isAdmin && <span style={{ fontSize: 10, color: "#2563EB", marginLeft: 4 }}>🔗</span>}</span>
               }
             </div>
             <button onClick={onClose} style={{ background: "none", color: "#9CA3AF", fontSize: 18, marginLeft: 8 }}>✕</button>
@@ -958,7 +958,7 @@ function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
           </div>}
           {/* Link */}
           {(p.link || isAdmin) && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-            {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" onClick={function (e) { e.stopPropagation(); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#EFF6FF", color: "#2563EB", textDecoration: "none", border: "1px solid #BFDBFE", display: "inline-flex", alignItems: "center", gap: 3 }}>🔗 링크 열기 ↗</a>}
+            {p.link && <button onClick={function (e) { e.stopPropagation(); var url = p.link; if (url && url.indexOf("://") < 0) url = "https://" + url; window.open(url, "_blank", "noopener"); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#EFF6FF", color: "#2563EB", border: "1px solid #BFDBFE", display: "inline-flex", alignItems: "center", gap: 3 }}>🔗 링크 열기 ↗</button>}
             {isAdmin && (eLink
               ? <div style={{ display: "flex", gap: 3, flex: 1 }}><input value={tmpL} onChange={function (e) { setTmpL(e.target.value); }} placeholder="https://..." style={{ flex: 1, fontSize: 11, padding: "4px 8px" }} /><button onClick={function () { onUpdate(Object.assign({}, p, { link: tmpL.trim() })); setELink(false); }} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button><button onClick={function () { setELink(false); }} style={{ padding: "3px 6px", borderRadius: 4, fontSize: 9, background: "#F3F4F6" }}>취소</button></div>
               : <button onClick={function () { setELink(true); }} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, background: "#F5F6F8", color: "#6B7280", border: "1px solid #E5E7EB" }}>{p.link ? "✏️ 수정" : "🔗 링크 추가"}</button>
@@ -1197,6 +1197,7 @@ function LoginModal({ onClose, onLogin }) {
     </div>
   );
 }
+
 ReactDOM.render(React.createElement(App), document.getElementById("root"));
 </script>
 </body>
