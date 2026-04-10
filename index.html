@@ -34,10 +34,7 @@ function getSB() {
     var cfg = JSON.parse(localStorage.getItem("bx-sb-cfg") || "{}");
     var url = cfg.url || SB_DEFAULT_URL;
     var key = cfg.key || SB_DEFAULT_KEY;
-    if (url && key) {
-      _sbClient = supabase.createClient(url, key);
-      return _sbClient;
-    }
+    if (url && key) { _sbClient = supabase.createClient(url, key); return _sbClient; }
   } catch(e) {}
   return null;
 }
@@ -45,8 +42,7 @@ function cloudLoad() {
   var sb = getSB();
   if (!sb) return Promise.resolve(null);
   return sb.from("scheduler").select("data").eq("id", 1).single().then(function(res) {
-    if (res.data && res.data.data) return res.data.data;
-    return null;
+    if (res.data && res.data.data) return res.data.data; return null;
   }).catch(function() { return null; });
 }
 function cloudSave(data) {
@@ -126,6 +122,9 @@ function App() {
   const [memos, setMemos] = useState([]);
   const [dayAction, setDayAction] = useState(null);
   const [memoEdit, setMemoEdit] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const ADMIN_PW = "bx2026";
 
   // ── Load from persistent storage on mount ──
   useState(function () {
@@ -389,9 +388,12 @@ function App() {
             <div style={{ fontSize: 10, color: "#6B7280" }}>BX Design Team</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={function () { setShowMemDlg(true); }} style={{ background: "#F5F6F8", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid #E5E7EB" }}>👥 구성원</button>
-          <button onClick={function () { setCreating(true); }} style={{ background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>+ 프로젝트</button>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {isAdmin ? <>
+            <button onClick={function () { setIsAdmin(false); }} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 10, fontWeight: 600, background: "#DCFCE7", color: "#16A34A", border: "1px solid #86EFAC" }}>🔓 관리자</button>
+            <button onClick={function () { setShowMemDlg(true); }} style={{ background: "#F5F6F8", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid #E5E7EB" }}>👥 구성원</button>
+            <button onClick={function () { setCreating(true); }} style={{ background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", padding: "8px 18px", borderRadius: 8, fontSize: 12, fontWeight: 700 }}>+ 프로젝트</button>
+          </> : <button onClick={function () { setShowLogin(true); }} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 10, fontWeight: 600, background: "#F5F6F8", color: "#6B7280", border: "1px solid #E5E7EB" }}>🔒 관리자 로그인</button>}
         </div>
       </div>
 
@@ -531,7 +533,7 @@ function App() {
                             var isLastSeg = si === bar.segs.length - 1 && bar.hasDue;
                             return (
                               <div key={si}
-                                onPointerDown={function (ev) { ev.preventDefault(); onDragStart(ev, e.id, e.dueDate, ev.currentTarget); }}
+                                onPointerDown={function (ev) { if (!isAdmin) return; ev.preventDefault(); onDragStart(ev, e.id, e.dueDate, ev.currentTarget); }}
                                 onClick={function () { if (!drag || dragDelta === 0) setSelectedId(e.id); }}
                                 style={{
                                   position: "absolute", top: 0, left: leftPct + "%", width: widthPct + "%", height: 24,
@@ -661,15 +663,15 @@ function App() {
       {showMemDlg && <MemberModal members={members} setMembers={updateMembers} setVisMem={updateVisMem} onClose={function () { setShowMemDlg(false); }} />}
 
       {/* DETAIL MODAL */}
-      {selectedProj && <DetailModal proj={selectedProj} members={members} onClose={function () { setSelectedId(null); }} onUpdate={function (u) { updateProjects(function (prev) { return prev.map(function (p) { return p.id === u.id ? u : p; }); }); }} onDelete={function (id) { updateProjects(function (prev) { return prev.filter(function (p) { return p.id !== id; }); }); setSelectedId(null); }} />}
+      {selectedProj && <DetailModal proj={selectedProj} members={members} isAdmin={isAdmin} onClose={function () { setSelectedId(null); }} onUpdate={function (u) { updateProjects(function (prev) { return prev.map(function (p) { return p.id === u.id ? u : p; }); }); }} onDelete={function (id) { updateProjects(function (prev) { return prev.filter(function (p) { return p.id !== id; }); }); setSelectedId(null); }} />}
 
       {/* DAY ACTION POPUP */}
       {dayAction && <div onClick={function () { setDayAction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.15)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div onClick={function (e) { e.stopPropagation(); }} style={{ background: "#fff", borderRadius: 14, padding: 20, width: 280, boxShadow: "0 12px 40px rgba(0,0,0,.12)" }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{fullDate(dayAction)}</div>
           <div style={{ fontSize: 10, color: "#9CA3AF", marginBottom: 14 }}>{DN[dayOfWeek(dayAction)]}요일</div>
-          <button onClick={function () { setCreating(dayAction); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>📋 프로젝트 생성</button>
-          <button onClick={function () { setMemoEdit({ id: "", date: dayAction, text: "", fontSize: 12, color: "#6B7280", bold: false }); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "#F5F6F8", fontWeight: 600, fontSize: 12, border: "1px solid #E5E7EB" }}>📝 메모 추가</button>
+          {isAdmin && <><button onClick={function () { setCreating(dayAction); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>📋 프로젝트 생성</button>
+          <button onClick={function () { setMemoEdit({ id: "", date: dayAction, text: "", fontSize: 12, color: "#6B7280", bold: false }); setDayAction(null); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "#F5F6F8", fontWeight: 600, fontSize: 12, border: "1px solid #E5E7EB" }}>📝 메모 추가</button></>}
           {memos.filter(function (m) { return m.date === dayAction; }).length > 0 && <div style={{ marginTop: 10, borderTop: "1px solid #F0F1F3", paddingTop: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF", marginBottom: 4 }}>메모</div>
             {memos.filter(function (m) { return m.date === dayAction; }).map(function (memo) {
@@ -689,6 +691,9 @@ function App() {
         else { updateMemos(function (prev) { return prev.concat([Object.assign({}, m, { id: "memo_" + Date.now() })]); }); }
         setMemoEdit(null);
       }} />}
+
+      {/* LOGIN MODAL */}
+      {showLogin && <LoginModal onClose={function () { setShowLogin(false); }} onLogin={function (pw) { if (pw === ADMIN_PW) { setIsAdmin(true); setShowLogin(false); } else { return false; } return true; }} />}
     </div>
   );
 }
@@ -749,6 +754,7 @@ function CreateModal({ members, initDate, onClose, onCreate }) {
   var _cm = useState(initDate ? parseD(initDate).m : new Date().getMonth() + 1); var calM = _cm[0]; var setCalM = _cm[1];
   var _pick = useState("due"); var picking = _pick[0]; var setPicking = _pick[1];
   var _memo = useState(""); var memo = _memo[0]; var setMemo = _memo[1];
+  var _link = useState(""); var link = _link[0]; var setLink = _link[1];
 
   var wsStr = dueDate ? calcStart(dueDate, md) : "";
   var canCreate = name.trim() !== "" && dueDate !== "";
@@ -773,6 +779,7 @@ function CreateModal({ members, initDate, onClose, onCreate }) {
       openDate: openDate || dueDate,
       members: selMem.map(function (mid) { return { mid: mid, hold: false }; }),
       memo: memo.trim(),
+      link: link.trim(),
       changes: [],
     });
   }
@@ -868,6 +875,11 @@ function CreateModal({ members, initDate, onClose, onCreate }) {
             <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>📝 메모 <span style={{ fontWeight: 400, color: "#9CA3AF" }}>선택사항</span></div>
             <textarea value={memo} onChange={function (e) { setMemo(e.target.value); }} placeholder="프로젝트 관련 메모를 입력하세요" style={{ width: "100%", minHeight: 60, padding: "8px 12px", borderRadius: 8, border: "1px solid #E5E7EB", fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
           </div>
+          {/* Link */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6 }}>🔗 관련 링크 <span style={{ fontWeight: 400, color: "#9CA3AF" }}>선택사항</span></div>
+            <input value={link} onChange={function (e) { setLink(e.target.value); }} placeholder="https://figma.com/... 또는 관련 URL" style={{ width: "100%", fontSize: 12 }} />
+          </div>
         </div>
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 6, position: "sticky", bottom: 0, background: "#fff", borderRadius: "0 0 16px 16px" }}>
           <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "#F5F6F8", color: "#6B7280", fontSize: 12, fontWeight: 600 }}>취소</button>
@@ -879,7 +891,7 @@ function CreateModal({ members, initDate, onClose, onCreate }) {
 }
 
 /* ============ DETAIL MODAL ============ */
-function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
+function DetailModal({ proj, members, isAdmin, onClose, onUpdate, onDelete }) {
   var p = proj;
   var gc = (GRADES[p.grade] || GRADES.B).color;
   var due = p.dueDate || p.openDate;
@@ -895,6 +907,8 @@ function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
   var _td = useState(due); var tmpD = _td[0]; var setTmpD = _td[1];
   var _eo = useState(false); var eOpen = _eo[0]; var setEOpen = _eo[1];
   var _to = useState(p.openDate); var tmpO = _to[0]; var setTmpO = _to[1];
+  var _el = useState(false); var eLink = _el[0]; var setELink = _el[1];
+  var _tl = useState(p.link || ""); var tmpL = _tl[0]; var setTmpL = _tl[1];
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.2)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -902,33 +916,41 @@ function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
         <div style={{ padding: "16px 22px", borderBottom: "1px solid #E5E7EB" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-              <button onClick={function () { setEGrade(!eGrade); }} style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0, cursor: "pointer", border: eGrade ? "2px solid #1A1D23" : "none" }}>{p.grade}</button>
-              {eName
+              {isAdmin ? <button onClick={function () { setEGrade(!eGrade); }} style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0, cursor: "pointer", border: eGrade ? "2px solid #1A1D23" : "none" }}>{p.grade}</button>
+              : <div style={{ width: 30, height: 30, borderRadius: 7, background: gc, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: "#fff", flexShrink: 0 }}>{p.grade}</div>}
+              {isAdmin && eName
                 ? <div style={{ display: "flex", gap: 4, flex: 1 }}><input value={tmpN} onChange={function (e) { setTmpN(e.target.value); }} style={{ flex: 1, fontSize: 14, fontWeight: 700 }} /><button onClick={function () { onUpdate(Object.assign({}, p, { name: tmpN.trim() || p.name })); setEName(false); }} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, background: "#2563EB", color: "#fff", fontWeight: 700 }}>저장</button></div>
-                : <span onClick={function () { setEName(true); }} style={{ fontWeight: 800, fontSize: 16, cursor: "pointer", borderBottom: "1px dashed #D1D5DB" }}>{p.name}</span>
+                : <span style={{ fontWeight: 800, fontSize: 16, cursor: isAdmin ? "pointer" : (p.link ? "pointer" : "default"), borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }} onClick={function () { if (isAdmin) setEName(true); else if (p.link) window.open(p.link, "_blank"); }}>{p.name}{p.link && !isAdmin && <span style={{ fontSize: 10, color: "#2563EB", marginLeft: 4 }}>🔗</span>}</span>
               }
             </div>
             <button onClick={onClose} style={{ background: "none", color: "#9CA3AF", fontSize: 18, marginLeft: 8 }}>✕</button>
           </div>
-          {eGrade && <div style={{ marginTop: 8, display: "flex", gap: 3 }}>
+          {isAdmin && eGrade && <div style={{ marginTop: 8, display: "flex", gap: 3 }}>
             {Object.keys(GRADES).map(function (g) {
               var isActive = p.grade === g;
               return <button key={g} onClick={function () { onUpdate(Object.assign({}, p, { grade: g })); setEGrade(false); }} style={{ flex: 1, padding: "6px 0", borderRadius: 6, textAlign: "center", background: isActive ? GRADES[g].color : "#F5F6F8", color: isActive ? "#fff" : "#6B7280", fontWeight: 800, fontSize: 13, border: isActive ? "none" : "1px solid #E5E7EB" }}>{g}<div style={{ fontSize: 8, opacity: 0.7 }}>{GRADES[g].md}MD</div></button>;
             })}
           </div>}
+          {/* Link */}
+          {(p.link || isAdmin) && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+            {isAdmin ? (eLink
+              ? <div style={{ display: "flex", gap: 3, flex: 1 }}><input value={tmpL} onChange={function (e) { setTmpL(e.target.value); }} placeholder="https://..." style={{ flex: 1, fontSize: 11, padding: "4px 8px" }} /><button onClick={function () { onUpdate(Object.assign({}, p, { link: tmpL.trim() })); setELink(false); }} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button><button onClick={function () { setELink(false); }} style={{ padding: "3px 6px", borderRadius: 4, fontSize: 9, background: "#F3F4F6" }}>취소</button></div>
+              : <button onClick={function () { setELink(true); }} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, background: "#EFF6FF", color: "#2563EB" }}>{p.link ? "🔗 링크 수정" : "🔗 링크 추가"}</button>
+            ) : (p.link && <a href={p.link} target="_blank" rel="noopener" style={{ fontSize: 10, color: "#2563EB", textDecoration: "underline" }}>🔗 관련 링크</a>)}
+          </div>}
           <div style={{ marginTop: 8, display: "flex", gap: 8, fontSize: 11, color: "#6B7280", flexWrap: "wrap", alignItems: "center" }}>
-            <span>🎯 완료 {eDue
+            <span>🎯 완료 {isAdmin && eDue
               ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpD} onChange={function (e) { setTmpD(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpD) { onUpdate(Object.assign({}, p, { dueDate: tmpD })); setEDue(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#16A34A", color: "#fff" }}>저장</button></span>
-              : <strong onClick={function () { setEDue(true); }} style={{ cursor: "pointer", borderBottom: "1px dashed #16A34A", color: "#16A34A" }}>{fullDate(due)}</strong>
+              : <strong onClick={function () { if (isAdmin) setEDue(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #16A34A" : "none", color: "#16A34A" }}>{fullDate(due)}</strong>
             }</span>
-            <span>🚀 오픈 {eOpen
+            <span>🚀 오픈 {isAdmin && eOpen
               ? <span style={{ display: "inline-flex", gap: 3 }}><input type="date" value={tmpO} onChange={function (e) { setTmpO(e.target.value); }} style={{ fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { if (tmpO) { onUpdate(Object.assign({}, p, { openDate: tmpO })); setEOpen(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#EA580C", color: "#fff" }}>저장</button></span>
-              : <strong onClick={function () { setEOpen(true); }} style={{ cursor: "pointer", borderBottom: "1px dashed #EA580C", color: "#EA580C" }}>{fullDate(p.openDate)}</strong>
+              : <strong onClick={function () { if (isAdmin) setEOpen(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #EA580C" : "none", color: "#EA580C" }}>{fullDate(p.openDate)}</strong>
             }</span>
             <span>🔨 시작 <strong>{fullDate(ws)}</strong></span>
-            <span>⏱ {eMd
+            <span>⏱ {isAdmin && eMd
               ? <span style={{ display: "inline-flex", gap: 3 }}><input type="number" value={tmpMd} onChange={function (e) { setTmpMd(e.target.value); }} style={{ width: 50, fontSize: 11, padding: "2px 6px" }} /><button onClick={function () { var v = parseInt(tmpMd); if (v > 0) { onUpdate(Object.assign({}, p, { md: v })); setEMd(false); } }} style={{ padding: "2px 8px", borderRadius: 4, fontSize: 9, background: "#2563EB", color: "#fff" }}>저장</button></span>
-              : <strong onClick={function () { setEMd(true); }} style={{ cursor: "pointer", borderBottom: "1px dashed #D1D5DB" }}>{p.md}MD</strong>
+              : <strong onClick={function () { if (isAdmin) setEMd(true); }} style={{ cursor: isAdmin ? "pointer" : "default", borderBottom: isAdmin ? "1px dashed #D1D5DB" : "none" }}>{p.md}MD</strong>
             }</span>
           </div>
         </div>
@@ -943,7 +965,7 @@ function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: mem.color }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: mem.color, padding: "1px 5px", borderRadius: 3, background: mem.color + "12" }}>{idx === 0 ? "메인" : "서브" + idx}</span>
                 <span style={{ flex: 1, fontWeight: 600, fontSize: 12 }}>{mem.name}</span>
-                <button onClick={function () { onUpdate(Object.assign({}, p, { members: p.members.filter(function (x) { return x.mid !== pm.mid; }) })); }} style={{ padding: "3px 6px", borderRadius: 5, fontSize: 9, background: "#FEE2E2", color: "#DC2626" }}>제외</button>
+                <button onClick={function () { onUpdate(Object.assign({}, p, { members: p.members.filter(function (x) { return x.mid !== pm.mid; }) })); }} style={{ padding: "3px 6px", borderRadius: 5, fontSize: 9, background: "#FEE2E2", color: "#DC2626", display: isAdmin ? "block" : "none" }}>제외</button>
               </div>
             );
           })}
@@ -964,7 +986,7 @@ function DetailModal({ proj, members, onClose, onUpdate, onDelete }) {
           </div>
         </div>
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between" }}>
-          <button onClick={function () { onDelete(p.id); }} style={{ padding: "6px 14px", borderRadius: 8, background: "#FEE2E2", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>삭제</button>
+          {isAdmin && <button onClick={function () { onDelete(p.id); }} style={{ padding: "6px 14px", borderRadius: 8, background: "#FEE2E2", color: "#DC2626", fontSize: 10, fontWeight: 600 }}>삭제</button>}
           <button onClick={onClose} style={{ padding: "6px 16px", borderRadius: 8, background: "#F5F6F8", fontSize: 11, fontWeight: 600 }}>닫기</button>
         </div>
       </div>
@@ -1119,6 +1141,31 @@ function MemoModal({ memo, onClose, onSave }) {
         <div style={{ padding: "12px 22px", borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "flex-end", gap: 6 }}>
           <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, background: "#F5F6F8", color: "#6B7280", fontSize: 12, fontWeight: 600 }}>취소</button>
           <button onClick={doSave} style={{ padding: "8px 20px", borderRadius: 8, background: text.trim() ? "#2563EB" : "#E5E7EB", color: text.trim() ? "#fff" : "#999", fontSize: 12, fontWeight: 700 }}>저장</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============ LOGIN MODAL ============ */
+function LoginModal({ onClose, onLogin }) {
+  var _pw = useState(""); var pw = _pw[0]; var setPw = _pw[1];
+  var _err = useState(false); var err = _err[0]; var setErr = _err[1];
+  function doLogin() {
+    var ok = onLogin(pw);
+    if (!ok) { setErr(true); setPw(""); }
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={function (e) { e.stopPropagation(); }} style={{ background: "#fff", borderRadius: 16, width: 360, boxShadow: "0 20px 60px rgba(0,0,0,.12)", padding: 28, textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg,#2563EB,#7C3AED)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "#fff", marginBottom: 12 }}>BX</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>관리자 로그인</div>
+        <div style={{ fontSize: 11, color: "#9CA3AF", marginBottom: 16 }}>편집 권한이 필요합니다</div>
+        {err && <div style={{ padding: "6px 12px", background: "#FEE2E2", color: "#DC2626", borderRadius: 6, fontSize: 11, marginBottom: 10 }}>비밀번호가 틀렸습니다</div>}
+        <input type="password" value={pw} onChange={function (e) { setPw(e.target.value); setErr(false); }} onKeyDown={function (e) { if (e.key === "Enter") doLogin(); }} placeholder="비밀번호 입력" style={{ width: "100%", textAlign: "center", fontSize: 14, marginBottom: 12 }} />
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px", borderRadius: 8, background: "#F5F6F8", color: "#6B7280", fontSize: 12, fontWeight: 600 }}>취소</button>
+          <button onClick={doLogin} style={{ flex: 1, padding: "10px", borderRadius: 8, background: "linear-gradient(135deg,#2563EB,#7C3AED)", color: "#fff", fontSize: 12, fontWeight: 700 }}>로그인</button>
         </div>
       </div>
     </div>
